@@ -9,6 +9,8 @@ pub struct TodoItem {
     pub id: u32,
     pub text: String,
     pub completed: bool,
+    pub parent_id: Option<u32>,
+    pub position: i32,
 }
 
 pub fn init_db(app_handle: &AppHandle) -> Result<()> {
@@ -31,10 +33,17 @@ pub fn init_db(app_handle: &AppHandle) -> Result<()> {
         "CREATE TABLE IF NOT EXISTS todos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             text TEXT NOT NULL,
-            completed BOOLEAN NOT NULL
+            completed BOOLEAN NOT NULL,
+            parent_id INTEGER,
+            position INTEGER DEFAULT 0,
+            FOREIGN KEY(parent_id) REFERENCES todos(id) ON DELETE CASCADE
         )",
         [],
     )?;
+
+    // Migration: Add columns if they don't exist (simplistic approach)
+    let _ = conn.execute("ALTER TABLE todos ADD COLUMN parent_id INTEGER", []);
+    let _ = conn.execute("ALTER TABLE todos ADD COLUMN position INTEGER DEFAULT 0", []);
 
     // Initialize default note if empty
     let count: i32 = conn.query_row("SELECT count(*) FROM notes", [], |row| row.get(0))?;
@@ -77,12 +86,14 @@ pub fn get_todos(app_handle: &AppHandle) -> Result<Vec<TodoItem>> {
     let db_path = app_dir.join("sticky_notes.db");
     let conn = Connection::open(db_path)?;
     
-    let mut stmt = conn.prepare("SELECT id, text, completed FROM todos")?;
+    let mut stmt = conn.prepare("SELECT id, text, completed, parent_id, position FROM todos ORDER BY position ASC")?;
     let todo_iter = stmt.query_map([], |row| {
         Ok(TodoItem {
             id: row.get(0)?,
             text: row.get(1)?,
             completed: row.get(2)?,
+            parent_id: row.get(3)?,
+            position: row.get(4)?,
         })
     })?;
 
@@ -99,9 +110,17 @@ pub fn save_todo(app_handle: &AppHandle, text: String) -> Result<u32> {
     let db_path = app_dir.join("sticky_notes.db");
     let conn = Connection::open(db_path)?;
     
+    // Get max position to append to end
+    let max_pos: Option<i32> = conn.query_row(
+        "SELECT MAX(position) FROM todos WHERE parent_id IS NULL",
+        [],
+        |row| row.get(0),
+    ).unwrap_or(Some(0));
+    let position = max_pos.unwrap_or(0) + 1;
+
     conn.execute(
-        "INSERT INTO todos (text, completed) VALUES (?1, ?2)",
-        params![text, false],
+        "INSERT INTO todos (text, completed, parent_id, position) VALUES (?1, ?2, ?3, ?4)",
+        params![text, false, None::<u32>, position],
     )?;
     
     let id = conn.last_insert_rowid() as u32;
@@ -130,6 +149,57 @@ pub fn delete_todo(app_handle: &AppHandle, id: u32) -> Result<()> {
         "DELETE FROM todos WHERE id = ?1",
         params![id],
     )?;
+    
+    Ok(())
+}
+
+pub fn move_todo(app_handle: &AppHandle, id: u32, target_parent_id: Option<u32>, target_position: i32) -> Result<()> {
+    let app_dir = app_handle.path().app_data_dir().unwrap();
+    let db_path = app_dir.join("sticky_notes.db");
+    let mut conn = Connection::open(db_path)?;
+    
+    let tx = conn.transaction()?;
+
+    // 1. Get current state
+    let (current_parent_id, current_position): (Option<u32>, i32) = tx.query_row(
+        "SELECT parent_id, position FROM todos WHERE id = ?",
+        params![id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+
+    // 2. Remove from old list (shift items up)
+    if let Some(pid) = current_parent_id {
+        tx.execute(
+            "UPDATE todos SET position = position - 1 WHERE parent_id = ? AND position > ?",
+            params![pid, current_position],
+        )?;
+    } else {
+        tx.execute(
+            "UPDATE todos SET position = position - 1 WHERE parent_id IS NULL AND position > ?",
+            params![current_position],
+        )?;
+    }
+
+    // 3. Make space in new list (shift items down)
+    if let Some(pid) = target_parent_id {
+        tx.execute(
+            "UPDATE todos SET position = position + 1 WHERE parent_id = ? AND position >= ?",
+            params![pid, target_position],
+        )?;
+    } else {
+        tx.execute(
+            "UPDATE todos SET position = position + 1 WHERE parent_id IS NULL AND position >= ?",
+            params![target_position],
+        )?;
+    }
+
+    // 4. Update the item itself
+    tx.execute(
+        "UPDATE todos SET parent_id = ?, position = ? WHERE id = ?",
+        params![target_parent_id, target_position, id],
+    )?;
+
+    tx.commit()?;
     
     Ok(())
 }

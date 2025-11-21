@@ -54,6 +54,16 @@ fn remove_todo_item(app_handle: tauri::AppHandle, id: u32) {
     let _ = db::delete_todo(&app_handle, id);
 }
 
+#[tauri::command]
+fn move_todo_item(app_handle: tauri::AppHandle, id: u32, target_parent_id: Option<u32>, target_position: i32) {
+    let _ = db::move_todo(&app_handle, id, target_parent_id, target_position);
+}
+
+#[tauri::command]
+fn log_message(msg: String) {
+    println!("[FRONTEND] {}", msg);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -72,7 +82,11 @@ pub fn run() {
             load_todos,
             add_todo_item,
             update_todo_status,
-            remove_todo_item
+            update_todo_status,
+            remove_todo_item,
+            remove_todo_item,
+            move_todo_item,
+            log_message
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
