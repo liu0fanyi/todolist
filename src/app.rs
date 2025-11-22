@@ -148,11 +148,7 @@ pub fn App() -> impl IntoView {
                             .collect::<Vec<_>>()
                             .join(", ")));
                         
-                        let (final_parent, mut final_pos) = if target_id == 0 {
-                            // Special case: Drop to root
-                            log_clone(format!("📍 Dropping to ROOT"));
-                            (None, 1000000)
-                        } else if let Some(target_todo) = current_todos.iter().find(|t| t.id == target_id) {
+                        let (final_parent, mut final_pos) = if let Some(target_todo) = current_todos.iter().find(|t| t.id == target_id) {
                              log_clone(format!("📋 Target todo: id={} '{}' parent={:?} pos={}", target_todo.id, target_todo.text, target_todo.parent_id, target_todo.position));
                              
                              let target_parent_id = target_todo.parent_id;
@@ -453,32 +449,7 @@ pub fn App() -> impl IntoView {
                                     drop_position=drop_position
                                     set_drop_position=set_drop_position
                                 />
-                                {move || if dragging_id.get().is_some() {
-                                    view! {
-                                        <div
-                                            class=move || {
-                                                let base = "mt-2 h-12 border-2 border-dashed rounded flex items-center justify-center text-gray-400 transition-colors text-sm select-none";
-                                                if drop_target_id.get() == Some(0) {
-                                                    format!("{} border-blue-400 bg-blue-50 text-blue-600", base)
-                                                } else {
-                                                    format!("{} border-gray-300 bg-gray-50", base)
-                                                }
-                                            }
-                                            on:mouseenter=move |_| {
-                                                log("🖱️ Mouse ENTER root drop zone".to_string());
-                                                set_drop_target_id.set(Some(0));
-                                            }
-                                            on:mouseleave=move |_| {
-                                                log("🖱️ Mouse LEAVE root drop zone".to_string());
-                                                set_drop_target_id.set(None);
-                                            }
-                                        >
-                                            "Drop here to un-nest"
-                                        </div>
-                                    }.into_any()
-                                } else {
-                                    view! { <span /> }.into_any()
-                                }}
+
                             </div>
                         </div>
                     }.into_any()
