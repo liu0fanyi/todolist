@@ -11,6 +11,8 @@ pub struct TodoItem {
     pub completed: bool,
     pub parent_id: Option<u32>,
     pub position: i32,
+    pub target_count: Option<i32>,
+    pub current_count: i32,
 }
 
 pub fn init_db(app_handle: &AppHandle) -> Result<()> {
@@ -36,6 +38,8 @@ pub fn init_db(app_handle: &AppHandle) -> Result<()> {
             completed BOOLEAN NOT NULL,
             parent_id INTEGER,
             position INTEGER DEFAULT 0,
+            target_count INTEGER,
+            current_count INTEGER DEFAULT 0,
             FOREIGN KEY(parent_id) REFERENCES todos(id) ON DELETE CASCADE
         )",
         [],
@@ -44,6 +48,8 @@ pub fn init_db(app_handle: &AppHandle) -> Result<()> {
     // Migration: Add columns if they don't exist (simplistic approach)
     let _ = conn.execute("ALTER TABLE todos ADD COLUMN parent_id INTEGER", []);
     let _ = conn.execute("ALTER TABLE todos ADD COLUMN position INTEGER DEFAULT 0", []);
+    let _ = conn.execute("ALTER TABLE todos ADD COLUMN target_count INTEGER", []);
+    let _ = conn.execute("ALTER TABLE todos ADD COLUMN current_count INTEGER DEFAULT 0", []);
 
     // Initialize default note if empty
     let count: i32 = conn.query_row("SELECT count(*) FROM notes", [], |row| row.get(0))?;
@@ -86,7 +92,7 @@ pub fn get_todos(app_handle: &AppHandle) -> Result<Vec<TodoItem>> {
     let db_path = app_dir.join("sticky_notes.db");
     let conn = Connection::open(db_path)?;
     
-    let mut stmt = conn.prepare("SELECT id, text, completed, parent_id, position FROM todos ORDER BY position ASC")?;
+    let mut stmt = conn.prepare("SELECT id, text, completed, parent_id, position, target_count, current_count FROM todos ORDER BY position ASC")?;
     let todo_iter = stmt.query_map([], |row| {
         Ok(TodoItem {
             id: row.get(0)?,
@@ -94,6 +100,8 @@ pub fn get_todos(app_handle: &AppHandle) -> Result<Vec<TodoItem>> {
             completed: row.get(2)?,
             parent_id: row.get(3)?,
             position: row.get(4)?,
+            target_count: row.get(5)?,
+            current_count: row.get(6)?,
         })
     })?;
 
@@ -264,6 +272,47 @@ pub fn move_todo(app_handle: &AppHandle, id: u32, target_parent_id: Option<u32>,
     )?;
 
     tx.commit()?;
+    
+    Ok(())
+}
+
+pub fn set_todo_count(app_handle: &AppHandle, id: u32, count: Option<i32>) -> Result<()> {
+    let app_dir = app_handle.path().app_data_dir().unwrap();
+    let db_path = app_dir.join("sticky_notes.db");
+    let conn = Connection::open(db_path)?;
+    
+    let current_count = count.unwrap_or(0);
+    
+    conn.execute(
+        "UPDATE todos SET target_count = ?1, current_count = ?2 WHERE id = ?3",
+        params![count, current_count, id],
+    )?;
+    
+    Ok(())
+}
+
+pub fn decrement_todo(app_handle: &AppHandle, id: u32) -> Result<()> {
+    let app_dir = app_handle.path().app_data_dir().unwrap();
+    let db_path = app_dir.join("sticky_notes.db");
+    let conn = Connection::open(db_path)?;
+    
+    // Decrement count
+    conn.execute(
+        "UPDATE todos SET current_count = current_count - 1 WHERE id = ? AND current_count > 0",
+        params![id],
+    )?;
+    
+    // Check if reached 0
+    let current_count: i32 = conn.query_row(
+        "SELECT current_count FROM todos WHERE id = ?",
+        params![id],
+        |row| row.get(0),
+    )?;
+    
+    if current_count <= 0 {
+        // Mark as completed and trigger cascade
+        update_todo(app_handle, id, true)?;
+    }
     
     Ok(())
 }

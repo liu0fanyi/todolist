@@ -68,6 +68,16 @@ fn log_message(msg: String) {
     println!("[FRONTEND] {}", msg);
 }
 
+#[tauri::command]
+fn set_todo_count(app_handle: tauri::AppHandle, id: u32, count: Option<i32>) {
+    let _ = db::set_todo_count(&app_handle, id, count);
+}
+
+#[tauri::command]
+fn decrement_todo(app_handle: tauri::AppHandle, id: u32) {
+    let _ = db::decrement_todo(&app_handle, id);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -88,7 +98,9 @@ pub fn run() {
             update_todo_status,
             remove_todo_item,
             move_todo_item,
-            log_message
+            log_message,
+            set_todo_count,
+            decrement_todo
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

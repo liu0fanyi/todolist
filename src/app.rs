@@ -23,6 +23,8 @@ pub struct TodoItem {
     pub completed: bool,
     pub parent_id: Option<u32>,
     pub position: i32,
+    pub target_count: Option<i32>,
+    pub current_count: i32,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -43,6 +45,17 @@ struct UpdateTodoArgs {
 
 #[derive(Serialize, Deserialize)]
 struct RemoveTodoArgs {
+    id: u32,
+}
+
+#[derive(Serialize, Deserialize)]
+struct SetTodoCountArgs {
+    id: u32,
+    count: Option<i32>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct DecrementTodoArgs {
     id: u32,
 }
 
@@ -293,6 +306,8 @@ pub fn App() -> impl IntoView {
                             completed: false,
                             parent_id: None,
                             position: 0,
+                            target_count: None,
+                            current_count: 0,
                         })
                     });
                 }
@@ -354,6 +369,32 @@ pub fn App() -> impl IntoView {
         pulldown_cmark::html::push_html(&mut html_output, parser);
         html_output
     };
+
+    let set_todo_count = move |id: u32, count: Option<i32>| {
+        spawn_local(async move {
+            let args = serde_wasm_bindgen::to_value(&SetTodoCountArgs { id, count }).unwrap();
+            invoke("set_todo_count", args).await;
+            // Reload todos
+            let saved_todos: Vec<TodoItem> = serde_wasm_bindgen::from_value(
+                invoke("load_todos", JsValue::NULL).await
+            ).unwrap_or_default();
+            set_todos.set(saved_todos);
+        });
+    };
+
+    let decrement_todo = move |id: u32| {
+        spawn_local(async move {
+            let args = serde_wasm_bindgen::to_value(&DecrementTodoArgs { id }).unwrap();
+            invoke("decrement_todo", args).await;
+            // Reload todos
+            let saved_todos: Vec<TodoItem> = serde_wasm_bindgen::from_value(
+                invoke("load_todos", JsValue::NULL).await
+            ).unwrap_or_default();
+            set_todos.set(saved_todos);
+        });
+    };
+
+
 
     view! {
         <main class="h-screen w-screen bg-yellow-100 flex flex-col overflow-hidden rounded-lg shadow-lg border border-yellow-300">
@@ -461,6 +502,8 @@ pub fn App() -> impl IntoView {
                                     set_drop_target_id=set_drop_target_id
                                     drop_position=drop_position
                                     set_drop_position=set_drop_position
+                                    set_todo_count=set_todo_count
+                                    decrement_todo=decrement_todo
                                 />
 
                             </div>
@@ -473,7 +516,7 @@ pub fn App() -> impl IntoView {
 }
 
 #[component]
-fn TodoList<F1, F2, F3, F4>(
+fn TodoList<F1, F2, F3, F4, F5, F6>(
     todos: Signal<Vec<TodoItem>>,
     parent_id: Option<u32>,
     toggle_todo: F1,
@@ -486,36 +529,36 @@ fn TodoList<F1, F2, F3, F4>(
     set_drop_target_id: WriteSignal<Option<u32>>,
     drop_position: ReadSignal<f64>,
     set_drop_position: WriteSignal<f64>,
-) -> AnyView
+    set_todo_count: F5,
+    decrement_todo: F6,
+) -> impl IntoView
 where
     F1: Fn(u32) + Clone + Send + 'static,
     F2: Fn(u32) + Clone + Send + 'static,
     F3: Fn(u32, Option<u32>, i32) + Clone + Send + 'static,
     F4: Fn(String) + Clone + Send + 'static,
+    F5: Fn(u32, Option<i32>) + Clone + Send + 'static,
+    F6: Fn(u32) + Clone + Send + 'static,
 {
-    let filtered_todos = move || {
-        let current_todos = todos.get();
-        let mut items: Vec<TodoItem> = current_todos
-            .into_iter()
-            .filter(|t| t.parent_id == parent_id)
-            .collect();
-        items.sort_by_key(|t| t.position);
-        items
-    };
 
     view! {
-        <ul class="pl-4">
+        <ul class="flex flex-col gap-2 pl-4 border-l-2 border-gray-100">
             <For
-                each=filtered_todos
+                each=move || {
+                    todos.get()
+                        .into_iter()
+                        .filter(|t| t.parent_id == parent_id)
+                        .collect::<Vec<_>>()
+                }
                 key=|todo| todo.id
                 children=move |todo| {
                     view! {
-                        <TodoItemView
-                            todo=todo
+                        <TodoItemView 
+                            todo=todo 
                             all_todos=todos
-                            toggle_todo=toggle_todo.clone()
-                            delete_todo=delete_todo.clone()
-                            log=log.clone()
+                            toggle_todo=toggle_todo.clone() 
+                            delete_todo=delete_todo.clone() 
+                            log=log.clone() 
                             on_drop=on_drop.clone()
                             dragging_id=dragging_id
                             set_dragging_id=set_dragging_id
@@ -523,16 +566,18 @@ where
                             set_drop_target_id=set_drop_target_id
                             drop_position=drop_position
                             set_drop_position=set_drop_position
+                            set_todo_count=set_todo_count.clone()
+                            decrement_todo=decrement_todo.clone()
                         />
                     }
                 }
             />
         </ul>
-    }.into_any()
+    }
 }
 
 #[component]
-fn TodoItemView<F1, F2, F3, F4>(
+fn TodoItemView<F1, F2, F3, F4, F5, F6>(
     todo: TodoItem,
     all_todos: Signal<Vec<TodoItem>>,
     toggle_todo: F1,
@@ -545,12 +590,16 @@ fn TodoItemView<F1, F2, F3, F4>(
     set_drop_target_id: WriteSignal<Option<u32>>,
     drop_position: ReadSignal<f64>,
     set_drop_position: WriteSignal<f64>,
+    set_todo_count: F5,
+    decrement_todo: F6,
 ) -> AnyView
 where
     F1: Fn(u32) + Clone + Send + 'static,
     F2: Fn(u32) + Clone + Send + 'static,
     F3: Fn(u32, Option<u32>, i32) + Clone + Send + 'static,
     F4: Fn(String) + Clone + Send + 'static,
+    F5: Fn(u32, Option<i32>) + Clone + Send + 'static,
+    F6: Fn(u32) + Clone + Send + 'static,
 {
     let id = todo.id;
     
@@ -653,22 +702,71 @@ where
         >
             <div class="flex items-center gap-2 select-none">
                 <span class="text-gray-400 cursor-grab">"⠿"</span>
-                <input 
-                    type="checkbox" 
-                    prop:checked=move || current_todo.get().completed 
-                    on:change={
-                        let toggle = toggle_todo.clone();
-                        move |_| toggle(id)
+                
+                {
+                    let toggle_todo = toggle_todo.clone();
+                    let decrement_todo = decrement_todo.clone();
+                    move || {
+                    let t = current_todo.get();
+                    let is_countdown = t.target_count.unwrap_or(0) > 0;
+                    
+                    if is_countdown && !t.completed {
+                        view! {
+                            <button
+                                class="w-6 h-6 flex items-center justify-center bg-blue-100 text-blue-600 rounded-full text-xs font-bold hover:bg-blue-200 transition-colors"
+                                on:click={
+                                    let dec = decrement_todo.clone();
+                                    move |ev| {
+                                        ev.stop_propagation();
+                                        dec(id);
+                                    }
+                                }
+                                on:mousedown=move |ev| ev.stop_propagation()
+                            >
+                                {t.current_count}
+                            </button>
+                        }.into_any()
+                    } else {
+                        view! {
+                            <input 
+                                type="checkbox" 
+                                prop:checked=move || current_todo.get().completed 
+                                on:change={
+                                    let toggle = toggle_todo.clone();
+                                    move |_| toggle(id)
+                                }
+                                on:mousedown=move |ev| ev.stop_propagation()
+                                class="cursor-pointer" 
+                            />
+                        }.into_any()
                     }
-                    on:mousedown=move |ev| ev.stop_propagation()
-                    class="cursor-pointer" 
-                />
+                }}
+
                 <span class=move || format!(
-                    "flex-1 text-sm {}",
+                    "flex-1 text-sm {}", 
                     if current_todo.get().completed { "line-through text-gray-500" } else { "text-gray-800" }
                 )>
                     {move || current_todo.get().text}
                 </span>
+
+                <input
+                    type="number"
+                    class="w-12 p-1 text-xs border rounded text-center text-gray-500"
+                    placeholder="#"
+                    prop:value=move || current_todo.get().target_count.map(|c| c.to_string()).unwrap_or_default()
+                    on:change={
+                        let set_count = set_todo_count.clone();
+                        move |ev| {
+                            let input = event_target::<web_sys::HtmlInputElement>(&ev);
+                            let val = input.value();
+                            let count = val.parse::<i32>().ok().filter(|&c| c > 0);
+                            set_count(id, count);
+                        }
+                    }
+                    on:mousedown=move |ev| ev.stop_propagation()
+                    on:click=move |ev| ev.stop_propagation()
+                />
+
                 <button 
                     on:click={
                         let del = delete_todo.clone();
@@ -691,6 +789,8 @@ where
                 set_drop_target_id=set_drop_target_id
                 drop_position=drop_position
                 set_drop_position=set_drop_position
+                set_todo_count=set_todo_count
+                decrement_todo=decrement_todo
             />
         </li>
     }.into_any()
