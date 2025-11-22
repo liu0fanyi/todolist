@@ -167,6 +167,30 @@ pub fn App() -> impl IntoView {
                         let (final_parent, mut final_pos) = if let Some(target_todo) = current_todos.iter().find(|t| t.id == target_id) {
                              log_clone(format!("📋 Target todo: id={} '{}' parent={:?} pos={}", target_todo.id, target_todo.text, target_todo.parent_id, target_todo.position));
                              
+                             // Check if target is a descendant of dragged item (would create a cycle)
+                             // This must be checked BEFORE any position calculation
+                             let is_descendant = {
+                                 let mut check_id = Some(target_id);
+                                 let mut found = false;
+                                 while let Some(current_id) = check_id {
+                                     if current_id == dragged_id {
+                                         found = true;
+                                         break;
+                                     }
+                                     check_id = current_todos.iter()
+                                         .find(|t| t.id == current_id)
+                                         .and_then(|t| t.parent_id);
+                                 }
+                                 found
+                             };
+                             
+                             if is_descendant {
+                                 log_clone(format!("⚠️ Cannot drop parent into/near its own child/descendant, skipping"));
+                                 set_dragging_id.set(None);
+                                 set_drop_target_id.set(None);
+                                 return;
+                             }
+                             
                              let target_parent_id = target_todo.parent_id;
                              let target_position = target_todo.position;
                              
@@ -699,15 +723,19 @@ where
         if drop_target_id.get() == Some(id) {
             let pos = drop_position.get();
             if pos < 0.25 {
+                // Dropping BEFORE - blue top border
                 classes.push("border-t-4".to_string());
                 classes.push("border-blue-500".to_string());
             } else if pos > 0.75 {
+                // Dropping AFTER - blue bottom border
                 classes.push("border-b-4".to_string());
                 classes.push("border-blue-500".to_string());
             } else {
-                classes.push("bg-blue-50".to_string());
+                // Dropping as CHILD - amber/yellow background with ring for visibility
+                classes.push("bg-amber-100".to_string());
                 classes.push("ring-2".to_string());
-                classes.push("ring-blue-500".to_string());
+                classes.push("ring-amber-400".to_string());
+                classes.push("border-amber-300".to_string());
             }
         } else {
             classes.push("hover:bg-yellow-50".to_string());
