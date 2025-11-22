@@ -16,13 +16,13 @@ struct SetAlwaysOnTopArgs {
     always_on_top: bool,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct TodoItem {
-    id: u32,
-    text: String,
-    completed: bool,
-    parent_id: Option<u32>,
-    position: i32,
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TodoItem {
+    pub id: u32,
+    pub text: String,
+    pub completed: bool,
+    pub parent_id: Option<u32>,
+    pub position: i32,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -302,16 +302,29 @@ pub fn App() -> impl IntoView {
     };
 
     let toggle_todo = move |id: u32| {
+        // Optimistic update
         set_todos.update(|t| {
             if let Some(item) = t.iter_mut().find(|i| i.id == id) {
                 item.completed = !item.completed;
-                let completed = item.completed;
-                spawn_local(async move {
-                    let args =
-                        serde_wasm_bindgen::to_value(&UpdateTodoArgs { id, completed }).unwrap();
-                    invoke("update_todo_status", args).await;
-                });
             }
+        });
+
+        spawn_local(async move {
+            // Let's re-read the item to get the intended state
+            let completed = todos.get_untracked().iter().find(|i| i.id == id).map(|i| i.completed).unwrap_or(false);
+            
+            log(format!("🔄 Toggling todo {} to {}", id, completed));
+
+            let args = serde_wasm_bindgen::to_value(&UpdateTodoArgs { id, completed }).unwrap();
+            invoke("update_todo_status", args).await;
+            
+            // Reload todos to get cascading updates
+            log(format!("🔄 Reloading todos after toggle..."));
+            let saved_todos: Vec<TodoItem> = serde_wasm_bindgen::from_value(
+                invoke("load_todos", JsValue::NULL).await
+            ).unwrap_or_default();
+            set_todos.set(saved_todos);
+            log(format!("✅ Todos reloaded after toggle"));
         });
     };
 
@@ -540,8 +553,15 @@ where
     F4: Fn(String) + Clone + Send + 'static,
 {
     let id = todo.id;
-    // let parent_id = todo.parent_id;
-    // let position = todo.position;
+    
+    // Create a derived signal for the current todo to ensure reactivity
+    // This fixes the issue where the component doesn't update when the parent list changes
+    let current_todo = create_memo(move |_| {
+        all_todos.get()
+            .into_iter()
+            .find(|t| t.id == id)
+            .unwrap_or(todo.clone())
+    });
 
     // Mouse down - start drag
     let on_mousedown = {
@@ -595,29 +615,30 @@ where
 
     // Visual feedback based on drag state
     let item_class = move || {
-        let is_dragging = dragging_id.get() == Some(id);
-        let is_drop_target = drop_target_id.get() == Some(id) && dragging_id.get().is_some();
-        
-        let mut classes = vec!["flex", "flex-col", "gap-1", "p-2", "rounded", "transition-all"];
-        
-        if is_dragging {
-            classes.push("opacity-50");
-            classes.push("cursor-grabbing");
-        } else if is_drop_target {
+        let mut classes = vec![
+            "flex flex-col p-2 rounded shadow-sm border transition-all duration-200 select-none".to_string(),
+            "bg-white".to_string(),
+        ];
+
+        if dragging_id.get() == Some(id) {
+            classes.push("opacity-50 scale-95 ring-2 ring-blue-400".to_string());
+        }
+
+        if drop_target_id.get() == Some(id) {
             let pos = drop_position.get();
             if pos < 0.25 {
-                classes.push("border-t-4");
-                classes.push("border-blue-500");
+                classes.push("border-t-4".to_string());
+                classes.push("border-blue-500".to_string());
             } else if pos > 0.75 {
-                classes.push("border-b-4");
-                classes.push("border-blue-500");
+                classes.push("border-b-4".to_string());
+                classes.push("border-blue-500".to_string());
             } else {
-                classes.push("bg-blue-50");
-                classes.push("ring-2");
-                classes.push("ring-blue-500");
+                classes.push("bg-blue-50".to_string());
+                classes.push("ring-2".to_string());
+                classes.push("ring-blue-500".to_string());
             }
         } else {
-            classes.push("hover:bg-yellow-50");
+            classes.push("hover:bg-yellow-50".to_string());
         }
         
         classes.join(" ")
@@ -634,7 +655,7 @@ where
                 <span class="text-gray-400 cursor-grab">"⠿"</span>
                 <input 
                     type="checkbox" 
-                    checked=todo.completed 
+                    prop:checked=move || current_todo.get().completed 
                     on:change={
                         let toggle = toggle_todo.clone();
                         move |_| toggle(id)
@@ -644,9 +665,9 @@ where
                 />
                 <span class=move || format!(
                     "flex-1 text-sm {}",
-                    if todo.completed { "line-through text-gray-500" } else { "text-gray-800" }
+                    if current_todo.get().completed { "line-through text-gray-500" } else { "text-gray-800" }
                 )>
-                    {todo.text.clone()}
+                    {move || current_todo.get().text}
                 </span>
                 <button 
                     on:click={
