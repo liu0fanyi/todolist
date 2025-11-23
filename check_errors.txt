@@ -1,0 +1,123 @@
+    Checking app-ui v0.1.0 (C:\Users\liu_f\.gemini\antigravity\scratch\sticky_notes\app)
+warning: unused import: `leptos::prelude::*`
+ --> src\main.rs:3:5
+  |
+3 | use leptos::prelude::*;
+  |     ^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: use of deprecated function `leptos::prelude::create_signal`: This function is being renamed to `signal()` to conform to Rust idioms.
+  --> src\app.rs:99:32
+   |
+99 |     let (pinned, set_pinned) = create_signal(false);
+   |                                ^^^^^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated function `leptos::prelude::create_signal`: This function is being renamed to `signal()` to conform to Rust idioms.
+   --> src\app.rs:100:34
+    |
+100 |     let (content, set_content) = create_signal(String::new());
+    |                                  ^^^^^^^^^^^^^
+
+warning: use of deprecated function `leptos::prelude::create_signal`: This function is being renamed to `signal()` to conform to Rust idioms.
+   --> src\app.rs:101:34
+    |
+101 |     let (editing, set_editing) = create_signal(true);
+    |                                  ^^^^^^^^^^^^^
+
+warning: use of deprecated function `leptos::prelude::create_signal`: This function is being renamed to `signal()` to conform to Rust idioms.
+   --> src\app.rs:102:30
+    |
+102 |     let (todos, set_todos) = create_signal(Vec::<TodoItem>::new());
+    |                              ^^^^^^^^^^^^^
+
+warning: use of deprecated function `leptos::prelude::create_signal`: This function is being renamed to `signal()` to conform to Rust idioms.
+   --> src\app.rs:103:28
+    |
+103 |     let (mode, set_mode) = create_signal("todo");
+    |                            ^^^^^^^^^^^^^
+
+warning: use of deprecated function `leptos::prelude::create_signal`: This function is being renamed to `signal()` to conform to Rust idioms.
+   --> src\app.rs:106:42
+    |
+106 |     let (dragging_id, set_dragging_id) = create_signal(None::<u32>);
+    |                                          ^^^^^^^^^^^^^
+
+warning: use of deprecated function `leptos::prelude::create_signal`: This function is being renamed to `signal()` to conform to Rust idioms.
+   --> src\app.rs:107:48
+    |
+107 |     let (drop_target_id, set_drop_target_id) = create_signal(None::<u32>);
+    |                                                ^^^^^^^^^^^^^
+
+warning: use of deprecated function `leptos::prelude::create_signal`: This function is being renamed to `signal()` to conform to Rust idioms.
+   --> src\app.rs:108:46
+    |
+108 |     let (drop_position, set_drop_position) = create_signal(0.5); // 0.0-1.0 for position detection
+    |                                              ^^^^^^^^^^^^^
+
+warning: use of deprecated function `leptos::prelude::create_memo`: This function is being removed to conform to Rust idioms. Please use `Memo::new()` instead.
+   --> src\app.rs:712:24
+    |
+712 |     let current_todo = create_memo(move |_| {
+    |                        ^^^^^^^^^^^
+
+error[E0308]: mismatched types
+    --> src\app.rs:168:49
+     |
+ 168 |             let x = window.screen_x().unwrap_or(100) as f64;
+     |                                       --------- ^^^ expected `JsValue`, found integer
+     |                                       |
+     |                                       arguments to this method are incorrect
+     |
+help: the return type of this call is `{integer}` due to the type of the argument passed
+    --> src\app.rs:168:21
+     |
+ 168 |             let x = window.screen_x().unwrap_or(100) as f64;
+     |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^---^
+     |                                                 |
+     |                                                 this argument influences the return type of `unwrap_or`
+note: method defined here
+    --> C:\Users\liu_f\.rustup\toolchains\nightly-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library/core/src/result.rs:1590:18
+     |
+1590 |     pub const fn unwrap_or(self, default: T) -> T
+     |                  ^^^^^^^^^
+
+error[E0308]: mismatched types
+    --> src\app.rs:169:49
+     |
+ 169 |             let y = window.screen_y().unwrap_or(100) as f64;
+     |                                       --------- ^^^ expected `JsValue`, found integer
+     |                                       |
+     |                                       arguments to this method are incorrect
+     |
+help: the return type of this call is `{integer}` due to the type of the argument passed
+    --> src\app.rs:169:21
+     |
+ 169 |             let y = window.screen_y().unwrap_or(100) as f64;
+     |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^---^
+     |                                                 |
+     |                                                 this argument influences the return type of `unwrap_or`
+note: method defined here
+    --> C:\Users\liu_f\.rustup\toolchains\nightly-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library/core/src/result.rs:1590:18
+     |
+1590 |     pub const fn unwrap_or(self, default: T) -> T
+     |                  ^^^^^^^^^
+
+error[E0605]: non-primitive cast: `wasm_bindgen::JsValue` as `f64`
+   --> src\app.rs:168:21
+    |
+168 |             let x = window.screen_x().unwrap_or(100) as f64;
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ an `as` expression can only be used to convert between primitive types or to coerce to a specific trait object
+
+error[E0605]: non-primitive cast: `wasm_bindgen::JsValue` as `f64`
+   --> src\app.rs:169:21
+    |
+169 |             let y = window.screen_y().unwrap_or(100) as f64;
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ an `as` expression can only be used to convert between primitive types or to coerce to a specific trait object
+
+Some errors have detailed explanations: E0308, E0605.
+For more information about an error, try `rustc --explain E0308`.
+warning: `app-ui` (bin "app-ui") generated 10 warnings
+error: could not compile `app-ui` (bin "app-ui") due to 4 previous errors; 10 warnings emitted

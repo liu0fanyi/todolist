@@ -1,6 +1,8 @@
-use leptos::ev::SubmitEvent;
+use leptos::ev::MouseEvent;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
+use leptos::html::ElementChild;
+use web_sys::SubmitEvent;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
@@ -75,18 +77,37 @@ struct LogArgs {
 #[derive(Serialize, Deserialize)]
 struct ResetAllArgs {}
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct WindowState {
+    width: f64,
+    height: f64,
+    x: f64,
+    y: f64,
+    pinned: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SaveWindowStateArgs {
+    width: f64,
+    height: f64,
+    x: f64,
+    y: f64,
+    pinned: bool,
+}
+
 #[component]
 pub fn App() -> impl IntoView {
-    let (pinned, set_pinned) = create_signal(false);
-    let (content, set_content) = create_signal(String::new());
-    let (editing, set_editing) = create_signal(true);
-    let (todos, set_todos) = create_signal(Vec::<TodoItem>::new());
-    let (mode, set_mode) = create_signal("todo");
+    let (pinned, set_pinned) = signal(false);
+    let (content, set_content) = signal(String::new());
+    let (editing, set_editing) = signal(true);
+    let (todos, set_todos) = signal(Vec::<TodoItem>::new());
+    let (mode, set_mode) = signal("todo");
     
     // Global drag state
-    let (dragging_id, set_dragging_id) = create_signal(None::<u32>);
-    let (drop_target_id, set_drop_target_id) = create_signal(None::<u32>);
-    let (drop_position, set_drop_position) = create_signal(0.5); // 0.0-1.0 for position detection
+    let (dragging_id, set_dragging_id) = signal(None::<u32>);
+    let (drop_target_id, set_drop_target_id) = signal(None::<u32>);
+    let (drop_position, set_drop_position) = signal(0.5); // 0.0-1.0 for position detection
 
     let log = move |msg: String| {
         spawn_local(async move {
@@ -95,7 +116,7 @@ pub fn App() -> impl IntoView {
         });
     };
 
-    // Load initial data
+    // Load initial data and window state
     Effect::new(move |_| {
         spawn_local(async move {
             let saved_content: String =
@@ -107,6 +128,28 @@ pub fn App() -> impl IntoView {
                 serde_wasm_bindgen::from_value(invoke("load_todos", JsValue::NULL).await)
                     .unwrap_or_default();
             set_todos.set(saved_todos);
+            
+            // Load and apply window state
+            let window_state: Option<WindowState> =
+                serde_wasm_bindgen::from_value(invoke("load_window_state", JsValue::NULL).await)
+                    .ok()
+                    .flatten();
+            
+            if let Some(state) = window_state {
+                // Apply window size and position
+                let window = web_sys::window().unwrap();
+                let _ = window.resize_to(state.width as i32, state.height as i32);
+                let _ = window.move_to(state.x as i32, state.y as i32);
+                
+                // Apply pin state
+                set_pinned.set(state.pinned);
+                if state.pinned {
+                    let args = serde_wasm_bindgen::to_value(&SetAlwaysOnTopArgs {
+                        always_on_top: true,
+                    }).unwrap();
+                    invoke("set_always_on_top", args).await;
+                }
+            }
         });
     });
 
@@ -119,6 +162,22 @@ pub fn App() -> impl IntoView {
             .unwrap();
             invoke("set_always_on_top", args).await;
             set_pinned.set(new_pinned);
+            
+            // Save window state
+            let window = web_sys::window().unwrap();
+            let width = window.inner_width().unwrap().as_f64().unwrap_or(300.0);
+            let height = window.inner_height().unwrap().as_f64().unwrap_or(300.0);
+            let x = window.screen_x().ok().and_then(|v| v.as_f64()).unwrap_or(100.0);
+            let y = window.screen_y().ok().and_then(|v| v.as_f64()).unwrap_or(100.0);
+            
+            let save_args = serde_wasm_bindgen::to_value(&SaveWindowStateArgs {
+                width,
+                height,
+                x,
+                y,
+                pinned: new_pinned,
+            }).unwrap();
+            invoke("save_window_state", save_args).await;
         });
     };
 
@@ -311,7 +370,9 @@ pub fn App() -> impl IntoView {
 
     let add_todo = move |ev: SubmitEvent| {
         ev.prevent_default();
-        let input = event_target::<web_sys::HtmlFormElement>(&ev)
+        let target = ev.target().unwrap();
+        let form = target.dyn_into::<web_sys::HtmlFormElement>().unwrap();
+        let input = form
             .elements()
             .named_item("todo-input")
             .unwrap()
@@ -652,7 +713,7 @@ where
     
     // Create a derived signal for the current todo to ensure reactivity
     // This fixes the issue where the component doesn't update when the parent list changes
-    let current_todo = create_memo(move |_| {
+    let current_todo = Memo::new(move |_| {
         all_todos.get()
             .into_iter()
             .find(|t| t.id == id)
@@ -814,8 +875,8 @@ where
                             set_count(id, count);
                         }
                     }
-                    on:mousedown=move |ev| ev.stop_propagation()
-                    on:click=move |ev| ev.stop_propagation()
+                    on:mousedown=move |ev: MouseEvent| ev.stop_propagation()
+                    on:click=move |ev: MouseEvent| ev.stop_propagation()
                 />
 
                 <button 
@@ -824,7 +885,7 @@ where
                         move |_| del(id)
                     }
                     class="text-red-400 hover:text-red-600 text-xs"
-                    on:mousedown=move |ev| ev.stop_propagation()
+                    on:mousedown=move |ev: MouseEvent| ev.stop_propagation()
                 >"×"</button>
             </div>
             <TodoList 

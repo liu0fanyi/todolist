@@ -1,4 +1,5 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+use tauri::Manager;
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
@@ -83,12 +84,84 @@ fn reset_all_todos(app_handle: tauri::AppHandle) {
     let _ = db::reset_all_todos(&app_handle);
 }
 
+#[tauri::command]
+fn save_window_state(
+    app_handle: tauri::AppHandle,
+    width: f64,
+    height: f64,
+    x: f64,
+    y: f64,
+    pinned: bool,
+) {
+    let _ = db::save_window_state(&app_handle, width, height, x, y, pinned);
+}
+
+#[tauri::command]
+fn load_window_state(app_handle: tauri::AppHandle) -> Option<db::WindowState> {
+    db::load_window_state(&app_handle).ok().flatten()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) = event {
+                let win = window.clone();
+                // Spawn a task to save state to avoid blocking the event loop
+                // In a real app, you might want to debounce this
+                std::thread::spawn(move || {
+                    if let Ok(factor) = win.scale_factor() {
+                        if let (Ok(pos), Ok(size)) = (win.outer_position(), win.inner_size()) {
+                            let logical_pos = pos.to_logical::<f64>(factor);
+                            let logical_size = size.to_logical::<f64>(factor);
+                            // We need to get the pinned state too.
+                            // Since we can't easily get it from the window struct directly without a getter (which exists but might not be exposed easily in all versions),
+                            // we'll assume we just update x, y, width, height and keep pinned as is?
+                            // Actually db::save_window_state overwrites everything.
+                            // We should probably fetch the current pinned state from DB or just pass it if we can get it.
+                            // window.is_always_on_top() is available?
+                            // Let's check if we can get always_on_top state.
+                            // If not, we might overwrite pinned with false if we don't know.
+                            // Wait, db::save_window_state takes pinned.
+                            // Let's try to read the current pinned state from the window if possible.
+                            // window.is_always_on_top() -> Result<bool> (Tauri 2.0?)
+                            // In Tauri 1.x it wasn't easily available.
+                            // If we can't get it, we should modify db::save_window_state to allow partial updates or read-modify-write.
+                            
+                            // For now, let's try to get it.
+                            // If not, we'll read from DB first.
+                            let app_handle = win.app_handle();
+                            let pinned = if let Ok(Some(state)) = db::load_window_state(app_handle) {
+                                state.pinned
+                            } else {
+                                false
+                            };
+
+                            let _ = db::save_window_state(
+                                app_handle,
+                                logical_size.width,
+                                logical_size.height,
+                                logical_pos.x,
+                                logical_pos.y,
+                                pinned
+                            );
+                        }
+                    }
+                });
+            }
+        })
         .setup(|app| {
             db::init_db(app.handle())?;
+            
+            // Restore window state
+            if let Some(window) = app.get_webview_window("main") {
+                 if let Ok(Some(state)) = db::load_window_state(app.handle()) {
+                     let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize { width: state.width, height: state.height }));
+                     let _ = window.set_position(tauri::Position::Logical(tauri::LogicalPosition { x: state.x, y: state.y }));
+                     let _ = window.set_always_on_top(state.pinned);
+                 }
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -106,7 +179,9 @@ pub fn run() {
             log_message,
             set_todo_count,
             decrement_todo,
-            reset_all_todos
+            reset_all_todos,
+            save_window_state,
+            load_window_state
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,8 +1,16 @@
 use rusqlite::{params, Connection, Result};
 use serde::{Deserialize, Serialize};
-
 use tauri::AppHandle;
 use tauri::Manager;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WindowState {
+    pub width: f64,
+    pub height: f64,
+    pub x: f64,
+    pub y: f64,
+    pub pinned: bool,
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TodoItem {
@@ -50,6 +58,19 @@ pub fn init_db(app_handle: &AppHandle) -> Result<()> {
     let _ = conn.execute("ALTER TABLE todos ADD COLUMN position INTEGER DEFAULT 0", []);
     let _ = conn.execute("ALTER TABLE todos ADD COLUMN target_count INTEGER", []);
     let _ = conn.execute("ALTER TABLE todos ADD COLUMN current_count INTEGER DEFAULT 0", []);
+
+    // Create window_state table
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS window_state (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            width REAL NOT NULL DEFAULT 300,
+            height REAL NOT NULL DEFAULT 300,
+            x REAL NOT NULL DEFAULT 100,
+            y REAL NOT NULL DEFAULT 100,
+            pinned INTEGER NOT NULL DEFAULT 0
+        )",
+        [],
+    )?;
 
     // Initialize default note if empty
     let count: i32 = conn.query_row("SELECT count(*) FROM notes", [], |row| row.get(0))?;
@@ -329,4 +350,51 @@ pub fn reset_all_todos(app_handle: &AppHandle) -> Result<()> {
     )?;
     
     Ok(())
+}
+
+pub fn save_window_state(
+    app_handle: &AppHandle,
+    width: f64,
+    height: f64,
+    x: f64,
+    y: f64,
+    pinned: bool,
+) -> Result<()> {
+    let app_dir = app_handle.path().app_data_dir().unwrap();
+    let db_path = app_dir.join("sticky_notes.db");
+    let conn = Connection::open(db_path)?;
+    
+    // Use INSERT OR REPLACE to upsert
+    conn.execute(
+        "INSERT OR REPLACE INTO window_state (id, width, height, x, y, pinned) VALUES (1, ?, ?, ?, ?, ?)",
+        params![width, height, x, y, if pinned { 1 } else { 0 }],
+    )?;
+    
+    Ok(())
+}
+
+pub fn load_window_state(app_handle: &AppHandle) -> Result<Option<WindowState>> {
+    let app_dir = app_handle.path().app_data_dir().unwrap();
+    let db_path = app_dir.join("sticky_notes.db");
+    let conn = Connection::open(db_path)?;
+    
+    let result = conn.query_row(
+        "SELECT width, height, x, y, pinned FROM window_state WHERE id = 1",
+        [],
+        |row| {
+            Ok(WindowState {
+                width: row.get(0)?,
+                height: row.get(1)?,
+                x: row.get(2)?,
+                y: row.get(3)?,
+                pinned: row.get::<_, i32>(4)? != 0,
+            })
+        },
+    );
+    
+    match result {
+        Ok(state) => Ok(Some(state)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e),
+    }
 }
