@@ -5,6 +5,7 @@ use leptos::html::ElementChild;
 use web_sys::SubmitEvent;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
+use regex::Regex;
 
 #[wasm_bindgen]
 extern "C" {
@@ -96,6 +97,52 @@ struct SaveWindowStateArgs {
     pinned: bool,
 }
 
+fn render_todo_markdown(text: &str) -> String {
+    // 1. Pre-process: Replace custom color syntax with placeholders
+    // We use placeholders that won't be messed up by markdown parsing
+    // *r*red*r* -> %%COLOR_RED_START%%red%%COLOR_END%%
+    // We avoid __ because it's markdown for bold!
+    
+    let mut processed = text.to_string();
+    
+    // Red
+    if let Ok(re) = Regex::new(r"\*r\*(.*?)\*r\*") {
+        processed = re.replace_all(&processed, "%%COLOR_RED_START%%$1%%COLOR_END%%").to_string();
+    }
+    // Green
+    if let Ok(re) = Regex::new(r"\*g\*(.*?)\*g\*") {
+        processed = re.replace_all(&processed, "%%COLOR_GREEN_START%%$1%%COLOR_END%%").to_string();
+    }
+    // Blue
+    if let Ok(re) = Regex::new(r"\*b\*(.*?)\*b\*") {
+        processed = re.replace_all(&processed, "%%COLOR_BLUE_START%%$1%%COLOR_END%%").to_string();
+    }
+
+    // 2. Parse Markdown to HTML
+    let parser = pulldown_cmark::Parser::new(&processed);
+    let mut html_output = String::new();
+    pulldown_cmark::html::push_html(&mut html_output, parser);
+
+    // 3. Post-process: Replace placeholders with actual HTML spans
+    // We remove the <p> tags that pulldown-cmark adds for single lines to keep it inline-like
+    // We also style headers manually since Tailwind resets them and we want them inline
+    let mut final_html = html_output
+        .replace("<p>", "")
+        .replace("</p>", "")
+        .replace("<h1>", "<span class=\"text-xl font-bold\">")
+        .replace("</h1>", "</span>")
+        .replace("<h2>", "<span class=\"text-lg font-bold\">")
+        .replace("</h2>", "</span>")
+        .replace("<h3>", "<span class=\"font-bold\">")
+        .replace("</h3>", "</span>")
+        .replace("%%COLOR_RED_START%%", "<span class=\"text-red-500\">")
+        .replace("%%COLOR_GREEN_START%%", "<span class=\"text-green-500\">")
+        .replace("%%COLOR_BLUE_START%%", "<span class=\"text-blue-500\">")
+        .replace("%%COLOR_END%%", "</span>");
+        
+    final_html
+}
+
 #[component]
 pub fn App() -> impl IntoView {
     let (pinned, set_pinned) = signal(false);
@@ -103,6 +150,7 @@ pub fn App() -> impl IntoView {
     let (editing, set_editing) = signal(true);
     let (todos, set_todos) = signal(Vec::<TodoItem>::new());
     let (mode, set_mode) = signal("todo");
+    let (show_markdown_tip, set_show_markdown_tip) = signal(false);
     
     // Global drag state
     let (dragging_id, set_dragging_id) = signal(None::<u32>);
@@ -572,13 +620,50 @@ pub fn App() -> impl IntoView {
                     }.into_any()
                 } else {
                     view! {
-                        <div class="flex flex-col h-full">
+                        <div class="flex flex-col h-full relative">
+                            <div 
+                                class=move || format!(
+                                    "absolute top-full left-0 mt-2 w-64 bg-white rounded-lg shadow-xl border border-gray-200 p-3 text-xs z-50 transition-all duration-200 transform origin-top {}",
+                                    if show_markdown_tip.get() { "opacity-100 scale-100" } else { "opacity-0 scale-95 pointer-events-none" }
+                                )
+                            >
+                                <div class="font-bold text-gray-700 mb-2 border-b pb-1">"Markdown Tips"</div>
+                                <div class="grid grid-cols-[1fr,auto,1fr] gap-x-2 gap-y-1 items-center">
+                                    <code class="bg-gray-100 px-1 rounded text-gray-600">"## Title"</code>
+                                    <span class="text-gray-400">"→"</span>
+                                    <span class="text-lg font-bold">"Title"</span>
+                                    
+                                    <code class="bg-gray-100 px-1 rounded text-gray-600">"**Bold**"</code>
+                                    <span class="text-gray-400">"→"</span>
+                                    <strong>"Bold"</strong>
+                                    
+                                    <code class="bg-gray-100 px-1 rounded text-gray-600">"*Italic*"</code>
+                                    <span class="text-gray-400">"→"</span>
+                                    <em>"Italic"</em>
+                                    
+                                    <code class="bg-gray-100 px-1 rounded text-gray-600">"*r*Red*r*"</code>
+                                    <span class="text-gray-400">"→"</span>
+                                    <span class="text-red-500">"Red"</span>
+                                    
+                                    <code class="bg-gray-100 px-1 rounded text-gray-600">"*g*Green*g*"</code>
+                                    <span class="text-gray-400">"→"</span>
+                                    <span class="text-green-500">"Green"</span>
+                                    
+                                    <code class="bg-gray-100 px-1 rounded text-gray-600">"*b*Blue*b*"</code>
+                                    <span class="text-gray-400">"→"</span>
+                                    <span class="text-blue-500">"Blue"</span>
+                                </div>
+                                <div class="absolute top-0 left-4 transform -translate-y-1/2 rotate-45 w-2 h-2 bg-white border-l border-t border-gray-200"></div>
+                            </div>
+
                             <form on:submit=add_todo class="flex gap-2 mb-2">
                                 <input
                                     name="todo-input"
                                     class="flex-1 bg-white/50 border-none rounded px-2 py-1 text-sm outline-none focus:bg-white"
-                                    placeholder="Add todo..."
+                                    placeholder="Add todo... (Markdown supported)"
                                     autocomplete="off"
+                                    on:focus=move |_| set_show_markdown_tip.set(true)
+                                    on:blur=move |_| set_show_markdown_tip.set(false)
                                 />
                                 <button type="submit" class="text-green-600 hover:text-green-700 font-bold">"+"</button>
                             </form>
@@ -854,11 +939,13 @@ where
                     }
                 }}
 
-                <span class=move || format!(
-                    "flex-1 text-sm {}", 
-                    if current_todo.get().completed { "line-through text-gray-500" } else { "text-gray-800" }
-                )>
-                    {move || current_todo.get().text}
+                <span 
+                    class=move || format!(
+                        "flex-1 text-sm {}", 
+                        if current_todo.get().completed { "line-through text-gray-500" } else { "text-gray-800" }
+                    )
+                    inner_html=move || render_todo_markdown(&current_todo.get().text)
+                >
                 </span>
 
                 <input
