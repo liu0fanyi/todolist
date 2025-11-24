@@ -233,6 +233,19 @@ pub fn update_todo(app_handle: &AppHandle, id: u32, completed: bool) -> Result<(
     Ok(())
 }
 
+pub fn update_todo_text(app_handle: &AppHandle, id: u32, text: String) -> Result<()> {
+    let app_dir = app_handle.path().app_data_dir().unwrap();
+    let db_path = app_dir.join("sticky_notes.db");
+    let conn = Connection::open(db_path)?;
+    
+    conn.execute(
+        "UPDATE todos SET text = ?1 WHERE id = ?2",
+        params![text, id],
+    )?;
+    
+    Ok(())
+}
+
 pub fn delete_todo(app_handle: &AppHandle, id: u32) -> Result<()> {
     let app_dir = app_handle.path().app_data_dir().unwrap();
     let db_path = app_dir.join("sticky_notes.db");

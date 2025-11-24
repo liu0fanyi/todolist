@@ -51,6 +51,11 @@ fn update_todo_status(app_handle: tauri::AppHandle, id: u32, completed: bool) {
 }
 
 #[tauri::command]
+fn update_todo_text(app_handle: tauri::AppHandle, id: u32, text: String) {
+    let _ = db::update_todo_text(&app_handle, id, text);
+}
+
+#[tauri::command]
 fn remove_todo_item(app_handle: tauri::AppHandle, id: u32) {
     let _ = db::delete_todo(&app_handle, id);
 }
@@ -177,6 +182,7 @@ pub fn run() {
             load_todos,
             add_todo_item,
             update_todo_status,
+            update_todo_text,
             remove_todo_item,
             move_todo_item,
             log_message,

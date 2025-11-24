@@ -157,6 +157,9 @@ pub fn App() -> impl IntoView {
     let (drop_target_id, set_drop_target_id) = signal(None::<u32>);
     let (drop_position, set_drop_position) = signal(0.5); // 0.0-1.0 for position detection
 
+    // Todo editing state
+    let (editing_todo_id, set_editing_todo_id) = signal(None::<u32>);
+
     let log = move |msg: String| {
         spawn_local(async move {
             let args = serde_wasm_bindgen::to_value(&LogArgs { msg }).unwrap();
@@ -544,6 +547,18 @@ pub fn App() -> impl IntoView {
 
 
 
+    let update_todo_text = move |id: u32, text: String| {
+        spawn_local(async move {
+            let args = serde_wasm_bindgen::to_value(&UpdateTodoTextArgs { id, text }).unwrap();
+            invoke("update_todo_text", args).await;
+            // Reload todos
+            let saved_todos: Vec<TodoItem> = serde_wasm_bindgen::from_value(
+                invoke("load_todos", JsValue::NULL).await
+            ).unwrap_or_default();
+            set_todos.set(saved_todos);
+        });
+    };
+
     view! {
         <main class="h-screen w-screen bg-yellow-100 flex flex-col overflow-hidden rounded-lg shadow-lg border border-yellow-300">
             <div
@@ -697,6 +712,9 @@ pub fn App() -> impl IntoView {
                                     set_drop_position=set_drop_position
                                     set_todo_count=set_todo_count
                                     decrement_todo=decrement_todo
+                                    editing_todo_id=editing_todo_id
+                                    set_editing_todo_id=set_editing_todo_id
+                                    update_todo_text=update_todo_text
                                 />
 
                             </div>
@@ -708,8 +726,14 @@ pub fn App() -> impl IntoView {
     }
 }
 
+#[derive(Serialize, Deserialize)]
+struct UpdateTodoTextArgs {
+    id: u32,
+    text: String,
+}
+
 #[component]
-fn TodoList<F1, F2, F3, F4, F5, F6>(
+fn TodoList<F1, F2, F3, F4, F5, F6, F7>(
     todos: Signal<Vec<TodoItem>>,
     parent_id: Option<u32>,
     toggle_todo: F1,
@@ -724,6 +748,9 @@ fn TodoList<F1, F2, F3, F4, F5, F6>(
     set_drop_position: WriteSignal<f64>,
     set_todo_count: F5,
     decrement_todo: F6,
+    editing_todo_id: ReadSignal<Option<u32>>,
+    set_editing_todo_id: WriteSignal<Option<u32>>,
+    update_todo_text: F7,
 ) -> impl IntoView
 where
     F1: Fn(u32) + Clone + Send + 'static,
@@ -732,6 +759,7 @@ where
     F4: Fn(String) + Clone + Send + 'static,
     F5: Fn(u32, Option<i32>) + Clone + Send + 'static,
     F6: Fn(u32) + Clone + Send + 'static,
+    F7: Fn(u32, String) + Clone + Send + 'static,
 {
 
     view! {
@@ -761,6 +789,9 @@ where
                             set_drop_position=set_drop_position
                             set_todo_count=set_todo_count.clone()
                             decrement_todo=decrement_todo.clone()
+                            editing_todo_id=editing_todo_id
+                            set_editing_todo_id=set_editing_todo_id
+                            update_todo_text=update_todo_text.clone()
                         />
                     }
                 }
@@ -770,7 +801,7 @@ where
 }
 
 #[component]
-fn TodoItemView<F1, F2, F3, F4, F5, F6>(
+fn TodoItemView<F1, F2, F3, F4, F5, F6, F7>(
     todo: TodoItem,
     all_todos: Signal<Vec<TodoItem>>,
     toggle_todo: F1,
@@ -785,6 +816,9 @@ fn TodoItemView<F1, F2, F3, F4, F5, F6>(
     set_drop_position: WriteSignal<f64>,
     set_todo_count: F5,
     decrement_todo: F6,
+    editing_todo_id: ReadSignal<Option<u32>>,
+    set_editing_todo_id: WriteSignal<Option<u32>>,
+    update_todo_text: F7,
 ) -> AnyView
 where
     F1: Fn(u32) + Clone + Send + 'static,
@@ -793,6 +827,7 @@ where
     F4: Fn(String) + Clone + Send + 'static,
     F5: Fn(u32, Option<i32>) + Clone + Send + 'static,
     F6: Fn(u32) + Clone + Send + 'static,
+    F7: Fn(u32, String) + Clone + Send + 'static,
 {
     let id = todo.id;
     
@@ -890,6 +925,16 @@ where
         classes.join(" ")
     };
 
+    let is_editing = move || editing_todo_id.get() == Some(id);
+
+    let save_edit = {
+        let update_todo_text = update_todo_text.clone();
+        move |new_text: String| {
+            update_todo_text(id, new_text);
+            set_editing_todo_id.set(None);
+        }
+    };
+
     view! {
         <li 
             class=item_class
@@ -939,14 +984,46 @@ where
                     }
                 }}
 
-                <span 
-                    class=move || format!(
-                        "flex-1 text-sm {}", 
-                        if current_todo.get().completed { "line-through text-gray-500" } else { "text-gray-800" }
-                    )
-                    inner_html=move || render_todo_markdown(&current_todo.get().text)
-                >
-                </span>
+                {move || {
+                    if is_editing() {
+                        let save_edit_blur = save_edit.clone();
+                        let save_edit_keydown = save_edit.clone();
+                        view! {
+                            <input
+                                type="text"
+                                class="flex-1 bg-yellow-50 border border-yellow-300 rounded px-1 py-0.5 text-sm outline-none focus:ring-1 focus:ring-yellow-500"
+                                prop:value=current_todo.get().text
+                                on:blur=move |ev| {
+                                    let input_element = event_target::<web_sys::HtmlInputElement>(&ev);
+                                    save_edit_blur(input_element.value());
+                                }
+                                on:keydown=move |ev| {
+                                    if ev.key() == "Enter" {
+                                        let input_element = event_target::<web_sys::HtmlInputElement>(&ev);
+                                        save_edit_keydown(input_element.value());
+                                    } else if ev.key() == "Escape" {
+                                        set_editing_todo_id.set(None);
+                                    }
+                                }
+                                on:mousedown=move |ev| ev.stop_propagation()
+                                on:click=move |ev| ev.stop_propagation()
+                                autofocus
+                            />
+                        }.into_any()
+                    } else {
+                        view! {
+                            <span 
+                                class=move || format!(
+                                    "flex-1 text-sm {}", 
+                                    if current_todo.get().completed { "line-through text-gray-500" } else { "text-gray-800" }
+                                )
+                                inner_html=move || render_todo_markdown(&current_todo.get().text)
+                                on:dblclick=move |_| set_editing_todo_id.set(Some(id))
+                            >
+                            </span>
+                        }.into_any()
+                    }
+                }}
 
                 <input
                     type="number"
@@ -990,7 +1067,11 @@ where
                 set_drop_position=set_drop_position
                 set_todo_count=set_todo_count
                 decrement_todo=decrement_todo
+                editing_todo_id=editing_todo_id
+                set_editing_todo_id=set_editing_todo_id
+                update_todo_text=update_todo_text
             />
         </li>
     }.into_any()
 }
+
