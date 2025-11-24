@@ -620,43 +620,43 @@ pub fn App() -> impl IntoView {
                     }.into_any()
                 } else {
                     view! {
-                        <div class="flex flex-col h-full relative">
-                            <div 
-                                class=move || format!(
-                                    "absolute top-full left-0 mt-2 w-64 bg-white rounded-lg shadow-xl border border-gray-200 p-3 text-xs z-50 transition-all duration-200 transform origin-top {}",
-                                    if show_markdown_tip.get() { "opacity-100 scale-100" } else { "opacity-0 scale-95 pointer-events-none" }
-                                )
-                            >
-                                <div class="font-bold text-gray-700 mb-2 border-b pb-1">"Markdown Tips"</div>
-                                <div class="grid grid-cols-[1fr,auto,1fr] gap-x-2 gap-y-1 items-center">
-                                    <code class="bg-gray-100 px-1 rounded text-gray-600">"## Title"</code>
-                                    <span class="text-gray-400">"→"</span>
-                                    <span class="text-lg font-bold">"Title"</span>
-                                    
-                                    <code class="bg-gray-100 px-1 rounded text-gray-600">"**Bold**"</code>
-                                    <span class="text-gray-400">"→"</span>
-                                    <strong>"Bold"</strong>
-                                    
-                                    <code class="bg-gray-100 px-1 rounded text-gray-600">"*Italic*"</code>
-                                    <span class="text-gray-400">"→"</span>
-                                    <em>"Italic"</em>
-                                    
-                                    <code class="bg-gray-100 px-1 rounded text-gray-600">"*r*Red*r*"</code>
-                                    <span class="text-gray-400">"→"</span>
-                                    <span class="text-red-500">"Red"</span>
-                                    
-                                    <code class="bg-gray-100 px-1 rounded text-gray-600">"*g*Green*g*"</code>
-                                    <span class="text-gray-400">"→"</span>
-                                    <span class="text-green-500">"Green"</span>
-                                    
-                                    <code class="bg-gray-100 px-1 rounded text-gray-600">"*b*Blue*b*"</code>
-                                    <span class="text-gray-400">"→"</span>
-                                    <span class="text-blue-500">"Blue"</span>
+                        <div class="flex flex-col h-full">
+                            <form on:submit=add_todo class="flex gap-2 mb-2 relative">
+                                <div 
+                                    class=move || format!(
+                                        "absolute top-full left-0 mt-1 w-64 bg-white backdrop-blur-sm rounded-lg shadow-xl border border-gray-200 p-3 text-xs z-[9999] transition-all duration-200 transform origin-top {}",
+                                        if show_markdown_tip.get() { "opacity-90 scale-100" } else { "opacity-0 scale-95 pointer-events-none" }
+                                    )
+                                >
+                                    <div class="font-bold text-gray-700 mb-2 border-b pb-1">"Markdown Tips"</div>
+                                    <div class="grid grid-cols-[1fr,auto,1fr] gap-x-2 gap-y-1 items-center">
+                                        <code class="bg-gray-100 px-1 rounded text-gray-600">"## Title"</code>
+                                        <span class="text-gray-400">"→"</span>
+                                        <span class="text-lg font-bold">"Title"</span>
+                                        
+                                        <code class="bg-gray-100 px-1 rounded text-gray-600">"**Bold**"</code>
+                                        <span class="text-gray-400">"→"</span>
+                                        <strong>"Bold"</strong>
+                                        
+                                        <code class="bg-gray-100 px-1 rounded text-gray-600">"*Italic*"</code>
+                                        <span class="text-gray-400">"→"</span>
+                                        <em>"Italic"</em>
+                                        
+                                        <code class="bg-gray-100 px-1 rounded text-gray-600">"*r*Red*r*"</code>
+                                        <span class="text-gray-400">"→"</span>
+                                        <span class="text-red-500">"Red"</span>
+                                        
+                                        <code class="bg-gray-100 px-1 rounded text-gray-600">"*g*Green*g*"</code>
+                                        <span class="text-gray-400">"→"</span>
+                                        <span class="text-green-500">"Green"</span>
+                                        
+                                        <code class="bg-gray-100 px-1 rounded text-gray-600">"*b*Blue*b*"</code>
+                                        <span class="text-gray-400">"→"</span>
+                                        <span class="text-blue-500">"Blue"</span>
+                                    </div>
+                                    <div class="absolute top-0 left-4 transform -translate-y-1/2 rotate-45 w-2 h-2 border-l border-t border-gray-200" style="background-color: rgba(255, 255, 255, 0.95);"></div>
                                 </div>
-                                <div class="absolute top-0 left-4 transform -translate-y-1/2 rotate-45 w-2 h-2 bg-white border-l border-t border-gray-200"></div>
-                            </div>
 
-                            <form on:submit=add_todo class="flex gap-2 mb-2">
                                 <input
                                     name="todo-input"
                                     class="flex-1 bg-white/50 border-none rounded px-2 py-1 text-sm outline-none focus:bg-white"
